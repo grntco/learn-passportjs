@@ -5,7 +5,7 @@ const session = require("express-session");
 const passport = require("passport");
 const LocalStrategy = require("passport-local").Strategy;
 const PORT = process.env.PORT || 3000;
-const path = require("path");
+const bcrypt = require("bcryptjs");
 
 const pool = new Pool({
   connectionString: `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`,
@@ -31,7 +31,8 @@ passport.use(
       if (!user) {
         return done(null, false, { message: "Incorrect username" });
       }
-      if (user.password !== password) {
+      const match = await bcrypt.compare(password, user.password);
+      if (!match) {
         return done(null, false, { message: "Incorrect password" });
       }
       return done(null, user);
@@ -74,15 +75,21 @@ app.get("/log-out", (req, res, next) => {
 });
 app.get("/sign-up", (req, res) => res.render("sign-up-form"));
 app.post("/sign-up", async (req, res, next) => {
-  try {
-    await pool.query("INSERT INTO users (username, password) VALUES ($1, $2)", [
-      req.body.username,
-      req.body.password,
-    ]);
-    res.redirect("/");
-  } catch (err) {
-    return next(err);
-  }
+  bcrypt.hash(req.body.password, 10, async (err, hashedPassword) => {
+    if (err) {
+      console.log(`Error: ${err}`);
+    } else {
+      try {
+        await pool.query(
+          "INSERT INTO users (username, password) VALUES ($1, $2)",
+          [req.body.username, hashedPassword]
+        );
+        res.redirect("/");
+      } catch (err) {
+        return next(err);
+      }
+    }
+  });
 });
 app.post(
   "/log-in",
